@@ -147,7 +147,6 @@ class LimeTextExplainer:
         It is the function to generate perturbed data, where the classifier_fn is the black-box model to be explained.
         """
         n_features = indexed_string.num_words
-        inf_weight = 1000000.0
         # distance_fn is the function to define the distance between the perturbed samples and the original sample.
         def distance_fn(n_active_feature_list):
             if n_features == 1: # only one features to be explained.
