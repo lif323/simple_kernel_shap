@@ -125,14 +125,13 @@ class LimeTextExplainer:
             return np.sqrt(np.exp(-(d**2) / kernel_width ** 2))
         
         kernel_fn = partial(kernel, kernel_width=kernel_width)
-
+        self.inf_weight = 1000000.0
         self.base = LimeBase(kernel_fn, random_state=self.random_state)
 
     def explain_instance(self, test_instance, classifier_fn, labels=(1,), num_features=10, num_samples=5000, distance_metric='cosine', model_regressor=None):
 
         indexed_string = IndexedString(test_instance)
 
-        # z_data, z_label, distances = self.data_labels_distances(indexed_string, classifier_fn, num_samples, distance_metric=distance_metric)
         z_data, z_label, distances = self.shap_data_labels_distances(indexed_string, classifier_fn, num_samples, distance_metric=distance_metric)
 
         for label in labels:
@@ -143,34 +142,6 @@ class LimeTextExplainer:
         for idx, score in explanation:
             print(indexed_string.inverse_vocab[idx], '\t', score)
 
-    
-    def data_labels_distances(self, indexed_string, classifier_fn, num_samples, distance_metric='cosine'):
-        """
-        It is the function to generate perturbed data, where the classifier_fn is the black-box model to be explained.
-        """
-        # distance_fn is the function to define the distance between the perturbed samples and the original sample.
-        def distance_fn(x):
-            return sklearn.metrics.pairwise.pairwise_distances(x, x[0], metric=distance_metric).ravel() * 100
-        doc_size = indexed_string.num_words
-
-        # the number of remained words for each examples.
-        sample = self.random_state.randint(1, doc_size+1, num_samples - 1)
-        data = np.ones((num_samples, doc_size))
-        data[0] = np.ones(doc_size)
-
-        features_range = range(doc_size)
-        inverse_data = [indexed_string.raw_string]
-        for i, size in enumerate(sample, start=1):
-            inactive = self.random_state.choice(features_range, size, replace=False)
-            # obtain z^{'}
-            data[i, inactive] = 0
-            # z^{'} to z
-            inverse_data.append(indexed_string.inverse_removing(inactive))
-        
-        labels = classifier_fn(inverse_data)
-        distances = distance_fn(sp.sparse.csr_matrix(data))
-        return data, labels, distances
-
     def shap_data_labels_distances(self, indexed_string, classifier_fn, n_samples, **kwargs):
         """
         It is the function to generate perturbed data, where the classifier_fn is the black-box model to be explained.
@@ -178,12 +149,20 @@ class LimeTextExplainer:
         n_features = indexed_string.num_words
         inf_weight = 1000000.0
         # distance_fn is the function to define the distance between the perturbed samples and the original sample.
-        def distance_fn(n_selected_features):
-            if n_selected_features == 0 or n_selected_features == n_features:
-                dis = inf_weight
-            else:
-                dis = 1.0
-            return dis
+        def distance_fn(n_active_feature_list):
+            if n_features == 1: # only one features to be explained.
+                dis_list = np.ones(len(n_active_feature_list))
+                return dis_list
+            
+            dis_list = list()
+            for n_active_features in n_active_feature_list:
+                if n_active_features == 0 or n_active_features == n_features:
+                    dis = self.inf_weight
+                else:
+                    dis = 1.0
+                dis_list.append(dis)
+            dis_list = np.array(dis_list)
+            return dis_list
 
         n_interp_features = n_features
         # the number of remained words for each examples.
